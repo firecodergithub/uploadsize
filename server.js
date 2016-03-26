@@ -14,7 +14,7 @@ app.use('/', function (req,res,next)
 	var getpath=decodeURIComponent(req.path).replace(/(^\/)/g, "");//remove leading / and decode URI
 	if (getpath=='') //by default return the help page
 	{
-		res.sendFile(path.join(__dirname,'public/indexTimeMicroservice.html'));
+		res.sendFile(path.join(__dirname,'public/indexURLShort.html'));
 	}
 	else // we got a time request so need to return the json
 	{
