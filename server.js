@@ -1,20 +1,31 @@
 'use strict';
-
+var https=require('https');
 var express = require('express');
 var mongoose = require('mongoose'); 
 var path=require('path');
 var fs=require('fs');
 
+var flickrKey="6e6dc76f660cd9a9688c4cad747c16bf";
+var hostname="api.flickr.com";
+var param="/services/rest/?method=flickr.photos.search&format=json&nojsoncallback=1";
+
 var app = express();
-app.use('/', function (req,res,next)
+app.use('/', function (req,res,next) //single entry point for all GET requests
 {
 	var getpath=decodeURIComponent(req.path).replace(/(^\/)/g, "");//remove leading / and decode URI
-	if (getpath=='') //by default return the help page
+//handle default GET with help page
+	if (getpath=='')
 	{
-		res.sendFile(path.join(__dirname,'public/indexURLShort.html'));
+			res.sendFile(path.join(__dirname,'public/indexImageSearch.html'));
 	}
-	else // we got a time request so need to return the json
+	else //an actual GET request
 	{
+	// we got an image request so we should treat it
+	console.log(getpath);
+	if (getpath.match('^api/imagesearch/*'))
+	{
+		var searchtext=getpath.replace('api/imagesearch/','');//keep only the text to search and offset if applicable
+		//save the string request into mongodb
 		mongoose.connect('mongodb://localhost:27017/clementinejs');//connect to db
 		//load all model files (with tables definition)
 		fs.readdirSync(__dirname+'/models').forEach(function(filename){
@@ -22,65 +33,82 @@ app.use('/', function (req,res,next)
 				//console.log(__dirname+'/models/'+filename) ;
 				require (__dirname+'/models/'+filename);
 						}
-				});
-		var reg=/(^new\/)/gi;
-		if (!reg.test(getpath))
-		{
-			//redirect if there is no /new in the request
-			mongoose.model('url').findOne({"shortUrlId":getpath})
-				.exec(function(err,doc)
-				{
-						if (err) console.log('Err search'+err);
-						if (doc!=null && doc!=undefined){ mongoose.connection.close();console.log('redirecting to '+ doc.originalUrl);res.redirect(doc.originalUrl);}
-						else {mongoose.connection.close();res.end("Shortened url "+getpath+" does not exist!");}
-				});
-		}
-else
-{
-		getpath=getpath.replace(/(^new\/)/gi,""); //remove leading new/
-		var regURLvalidate= /^(https?|ftp):\/\/(((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:)*@)?(((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]))|((([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.)+(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.?)(:\d*)?)(\/((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)+(\/(([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)*)*)?)?(\?((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)|[\uE000-\uF8FF]|\/|\?)*)?(\#((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)|\/|\?)*)?$/i
-		//check if URL
-		if (regURLvalidate.test(getpath))
-		{
-			console.log('url '+getpath+' is good!');
-			//check what link number we have reached and add a new entry in the database
-			//now we have the model defined, we can access directly and find last record
-			var findLastUrl=mongoose.model('url').findOne()
-			    .sort('-shortUrlId')
-			    .exec(function(err, doc)
-			    {
-				if (err) console.log('Err'+err);
-				else
-				{
-					if (doc==null) {var max=0;} else
-					{
-						var max = doc.shortUrlId;
-					}
-					console.log(max.toString());
-					var ob={"shortUrlId":max+1,"originalUrl":getpath,"ip":req.headers["x-forwarded-for"]};
-					mongoose.model('url').create(ob,function(err,data){
-						if (err) console('Error on insert '+err);
-						mongoose.connection.close();
-					});
+		});
+		//our db model is imgSearch
+		var ob={"term":searchtext,"when":new Date().toString(),"ip":req.headers["x-forwarded-for"]};
+		mongoose.model('imgSearch').create(ob,function(err,data){
+				if (err) console('Error on insert '+err);
+				mongoose.connection.close();
+			});
+		//set default page to 1 if no offset specified in the request
+		var page=(req.query.offset==undefined)?1:req.query.offset;
+		console.log(searchtext);//compile the actual request for flickr
+		  var options = {
+		    host: hostname,
+		    path:param+'&api_key='+flickrKey+'&page='+page+'&text='+encodeURIComponent(searchtext),
+		    method: 'GET',
+		    headers: {}
+		  };
+		console.log(options);
+		//do the flickr request
+		var reqs = https.request(options, function(resp) {
+			resp.setEncoding('utf-8');
+			//console.log(resp);
+			var responseString = '';
+			resp.on('data', function(data) {
+				responseString += data;
+				//console.log(data);
+			});
 
-					var jsn={"original_url":getpath,"shortened_url":req.protocol + '://' + req.get('host') +'/'+(max+1).toString()};
-					res.send(JSON.stringify(jsn));
+			resp.on('end', function() {
+				//console.log(responseString);
+				var responseObject = JSON.parse(responseString);
+				//create new object with urls
+				var recomposedJSON=[];
+				for (var i=0;i<responseObject.photos.photo.length;i++)
+				{
+					recomposedJSON.push({url:'farm'+responseObject.photos.photo[i].farm+
+						'.staticflickr.com/'+responseObject.photos.photo[i].server+
+						'/'+responseObject.photos.photo[i].id+'_'+responseObject.photos.photo[i].secret+'.jpg',
+						snippet:responseObject.photos.photo[i].title,
+						context:'farm'+responseObject.photos.photo[i].farm+
+						'.staticflickr.com/'+responseObject.photos.photo[i].server+
+						'/'+responseObject.photos.photo[i].id+'_'+responseObject.photos.photo[i].secret+'.jpg'
+						});
 				}
-			    }
-			);
-			if (findLastUrl==null) {
-					console.log('Empty Db err');
-			}
-
-		}
-		else
-		{
-			var jsn={"error":getpath+" is not a valid URL!"};
-			res.send(jsn);
-			//console.log(getpath);
-		}
+				res.end(JSON.stringify(recomposedJSON));
+			});
+		});
+		reqs.end();//needed because otherwise we get socket timeout
 	}
-}
+	else
+		if (getpath.match('^api/latest/imagesearch/*'))
+		{
+
+				mongoose.connect('mongodb://localhost:27017/clementinejs');//connect to db
+				//load all model files (with tables definition)
+				fs.readdirSync(__dirname+'/models').forEach(function(filename){
+						if (filename.indexOf('.js')) {
+						//console.log(__dirname+'/models/'+filename) ;
+						require (__dirname+'/models/'+filename);
+								}
+						});
+				//search for image search terms and return them all
+				mongoose.model('imgSearch').find().exec( function(err,docs)
+						{
+								if (err) console.log('Err search'+err);
+								mongoose.connection.close();
+								console.log(docs);
+								var latestSearches=[];//remove all the other info keep just term and when
+								for (var i=0;i<docs.length;i++) { latestSearches.push({'term':docs[i].term,'when':docs[i].when})};
+								res.end(JSON.stringify(latestSearches));
+						});
+		}
+		else //GET request unknown-return error message
+		{
+			res.end('Invalid GET request! for valid ones see main page');
+		}
+	}	
 });
 
 var port = process.env.PORT || 8080;
